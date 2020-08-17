@@ -1,0 +1,63 @@
+import com.rallyhealth.vocab.incentives.*;
+
+rule "Unlock all activities that do not have any restrictions"
+when
+    $activity : Activity()
+    not( RequiresFailureOf( firstActivity() == $activity ) )
+then
+    insert(new Unlocked($activity));
+end
+
+rule "Unlock guarded activity based on failure info"
+when
+    RequiresFailureOf($toUnlock: firstActivity(),  $toFail : secondActivity())
+    Failed(activity() == $toFail)
+then
+   insert(new Unlocked($toUnlock) );
+end
+
+rule "Assert completed for biometric activity"
+when
+    BiometricReading($employee : employee(), $value : value(), $ts : timestamp(), $tor : timeOfReceipt(), $klass : klass())
+    IsBiometricActivity( acceptableReadingType() == $klass, maxAcceptableValue() >= $value, $activity : activity() )
+then
+    insert( new Completed($employee, $activity, $ts, $tor) );
+end
+
+rule "Assert failed for biometric activity"
+when
+    BiometricReading($employee : employee(), $value : value(), $ts : timestamp(), $tor : timeOfReceipt(), $klass : klass())
+    IsBiometricActivity( acceptableReadingType() == $klass, maxAcceptableValue() < $value, $activity : activity() )
+then
+    insert( new Failed($employee, $activity, $ts, $tor) );
+end
+
+rule "A choice activity is completed if it has not been completed before and its first constituent is unlocked and completed"
+when
+    $choiceActivity : Choice( $activity : firstChoice() )
+    Unlocked( activity() == $activity )
+    $employee : Employee( )
+    not ( Completed(employee() == $employee, activity() == $choiceActivity) )
+    Completed(employee() == $employee, activity() == $activity, $ts : timestamp(), $tor : timeOfReceipt() )
+then
+    insert( new Completed($employee, $choiceActivity, $ts, $tor ) );
+end
+
+rule "A choice activity is completed if it has not been completed before and its second constituent is unlocked and completed"
+when
+    $choiceActivity : Choice( $activity : secondChoice() )
+    Unlocked( activity() == $activity )
+    $employee : Employee( )
+    not ( Completed(employee() == $employee, activity() == $choiceActivity) )
+    Completed(employee() == $employee, activity() == $activity, $ts : timestamp(), $tor : timeOfReceipt() )
+then
+    insert( new Completed($employee, $choiceActivity, $ts, $tor ) );
+end
+
+rule "When an activity is linked to a reward and the user has completed the activity, he is eligible for the reward"
+when
+    Pays($activity : activity(), $reward : reward())
+    Completed( $employee : employee(), activity() == $activity )
+then
+    insert( new Eligible( $employee, $reward ) );
+end
